@@ -1,40 +1,54 @@
-import { AppModule } from '@/app.module'
-import { PrismaService } from '@/prisma/prisma.service'
-import { INestApplication } from '@nestjs/common'
-import { Test } from '@nestjs/testing'
-import request from 'supertest'
+import {
+  Body,
+  ConflictException,
+  Controller,
+  HttpCode,
+  Post,
+  UsePipes,
+} from '@nestjs/common'
+import { PrismaService } from 'src/prisma/prisma.service'
+import { hash } from 'bcryptjs'
+import { z } from 'zod'
+import { ZodValidationPipe } from 'src/pipes/zod-validation-pipe'
 
-describe('Create Account (E2E)', () => {
-  let app: INestApplication
-  let prisma: PrismaService
+const createAccountBodySchema = z.object({
+  name: z.string(),
+  email: z.string().email(),
+  password: z.string(),
+})
 
-  beforeAll(async () => {
-    const moduleRef = await Test.createTestingModule({
-      imports: [AppModule],
-    }).compile()
+type CreateAccountBodySchema = z.infer<typeof createAccountBodySchema>
 
-    app = moduleRef.createNestApplication()
+@Controller('/accounts')
+export class CreateAccountControler {
+  constructor(private prisma: PrismaService) {}
 
-    prisma = moduleRef.get(PrismaService)
+  @Post()
+  @HttpCode(201)
+  @UsePipes(new ZodValidationPipe(createAccountBodySchema))
+  async handle(@Body() body: CreateAccountBodySchema) {
+    const { name, email, password } = body
 
-    await app.init()
-  })
-
-  test('[POST] /accounts', async () => {
-    const response = await request(app.getHttpServer()).post('/accounts').send({
-      name: 'John Doe',
-      email: 'johndoe@example.com',
-      password: '123456',
-    })
-
-    expect(response.statusCode).toBe(201)
-
-    const userOnDatabase = await prisma.user.findUnique({
+    const userWithSameEmail = await this.prisma.user.findUnique({
       where: {
-        email: 'johndoe@example.com',
+        email,
       },
     })
 
-    expect(userOnDatabase).toBeTruthy()
-  })
-})
+    if (userWithSameEmail) {
+      throw new ConflictException(
+        'User with same e-mail address already exists.',
+      )
+    }
+
+    const hashedPassword = await hash(password, 8)
+
+    await this.prisma.user.create({
+      data: {
+        name,
+        email,
+        password: hashedPassword,
+      },
+    })
+  }
+}
