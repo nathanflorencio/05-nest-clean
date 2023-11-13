@@ -59,12 +59,7 @@ model Answer {
   comments     Comment[]
   attachments  Attachment[]
 
-  @@map("ansers")
-}
-
-enum CommentType {
-  QUESTION
-  ANSWER
+  @@map("answers")
 }
 
 model Comment {
